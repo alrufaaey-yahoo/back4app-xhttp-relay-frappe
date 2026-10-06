@@ -1,20 +1,19 @@
-"""HTTP relay endpoint for Frappe.
+"""Direct and API HTTP relay for Frappe.
 
-Call it with:
-    /api/method/back4app_xhttp_relay.api.relay?path=/some/path
-
-The target is configured in site_config.json as
-``back4app_relay_target_domain``.  An optional
-``back4app_relay_token`` can protect the endpoint with X-Relay-Token.
+The direct relay is installed as a Frappe ``before_request`` hook. Public
+requests such as ``/`` and ``/path?query=1`` are forwarded to the configured
+upstream while Frappe administration, assets, and API routes remain available.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from urllib.parse import urlsplit, urlunsplit
 
 import frappe
 import requests
-from werkzeug.exceptions import BadRequest, Forbidden
+from werkzeug.exceptions import BadRequest, Forbidden, HTTPException
+from werkzeug.wrappers import Response
 
 
 _DROP_HEADERS = {
@@ -33,102 +32,153 @@ _DROP_HEADERS = {
     "x-forwarded-port",
     "content-length",
 }
-_PASS_HEADERS = {
-    "accept",
-    "accept-encoding",
-    "content-type",
-    "cookie",
-    "user-agent",
-    "x-forwarded-for",
-    "x-real-ip",
-}
+
+# Keep Frappe usable for administration and for the explicit API endpoints.
+_EXEMPT_PREFIXES = (
+    "/api/",
+    "/assets/",
+    "/files/",
+    "/private/files/",
+    "/app",
+    "/desk",
+    "/login",
+    "/setup",
+    "/socket.io",
+    "/backups",
+    "/.well-known/",
+)
+
+
+class RelayHTTPException(HTTPException):
+    """Stop Frappe's normal router and return the upstream response directly."""
+
+    def __init__(self, response: Response):
+        super().__init__(description="Relay response", response=response)
 
 
 def _setting(name: str, default=None):
-    """Read a site config value without exposing the whole site config."""
     return frappe.conf.get(name, default)
 
 
-def _target_url(path: str) -> str:
+def _base_target() -> tuple[str, str]:
     base = (_setting("back4app_relay_target_domain") or "https://vps.thumbayan.com:443").rstrip("/")
-    parsed_base = urlsplit(base)
-    if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
+    parsed = urlsplit(base)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise frappe.ValidationError("back4app_relay_target_domain must be an http(s) URL")
+    return parsed.scheme, parsed.netloc
 
-    if not path:
-        path = "/"
-    if not path.startswith("/"):
-        path = "/" + path
-    parsed_path = urlsplit(path)
-    # The target host is always taken from configuration; callers can only choose the path/query.
-    return urlunsplit((parsed_base.scheme, parsed_base.netloc, parsed_path.path or "/", parsed_path.query, ""))
+
+def _target_url(path: str) -> str:
+    scheme, netloc = _base_target()
+    parsed_path = urlsplit(path or "/")
+    safe_path = parsed_path.path or "/"
+    return urlunsplit((scheme, netloc, safe_path, parsed_path.query, ""))
 
 
 def _request_headers() -> dict[str, str]:
     incoming = frappe.request.headers
     headers: dict[str, str] = {}
+    client_ip = incoming.get("X-Real-IP") or incoming.get("X-Forwarded-For")
+
     for key, value in incoming.items():
         lower = key.lower()
-        if lower in _DROP_HEADERS or lower.startswith("x-vercel-") or lower == "x-relay-token":
+        if lower in _DROP_HEADERS or lower == "x-relay-token" or lower.startswith("x-vercel-"):
             continue
-        if lower in _PASS_HEADERS:
-            headers[key] = value
-    # Preserve the original client IP in the same way as the Node implementation.
-    client_ip = incoming.get("X-Real-IP") or incoming.get("X-Forwarded-For")
+        headers[key] = value
+
     if client_ip:
         headers["X-Forwarded-For"] = client_ip
+    headers["X-Forwarded-Proto"] = "https" if frappe.request.scheme == "https" else "http"
+    headers["X-Forwarded-Host"] = frappe.request.host
     return headers
 
 
-def _set_raw_response(response: requests.Response) -> None:
-    """Ask Frappe to return the upstream body instead of wrapping it in JSON."""
-    frappe.local.response["type"] = "binary"
-    frappe.local.response["filecontent"] = response.content
-    frappe.local.response["content_type"] = response.headers.get("Content-Type", "application/octet-stream")
-    frappe.local.response["http_status_code"] = response.status_code
-    output_headers = {}
-    for key, value in response.headers.items():
-        if key.lower() not in _DROP_HEADERS and key.lower() not in {"content-length", "content-encoding"}:
-            output_headers[key] = value
-    frappe.local.response["headers"] = output_headers
-
-
-@frappe.whitelist(allow_guest=True)
-def health():
-    """Simple health endpoint for monitoring."""
-    return {"status": "ok"}
-
-
-@frappe.whitelist(allow_guest=True)
-def relay(path: str | None = None):
-    """Relay the current request to the configured upstream target.
-
-    ``path`` is a URL path with an optional query string. The endpoint accepts
-    GET/POST/PUT/PATCH/DELETE/OPTIONS/HEAD and forwards the request body.
-    """
+def _token_is_valid() -> bool:
     configured_token = _setting("back4app_relay_token")
-    supplied_token = frappe.request.headers.get("X-Relay-Token")
-    if configured_token and supplied_token != configured_token:
-        raise Forbidden("Invalid relay token")
+    if not configured_token:
+        return True
+    return frappe.request.headers.get("X-Relay-Token") == configured_token
 
-    method = frappe.request.method.upper()
-    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
-        raise BadRequest("HTTP method is not supported by the relay")
 
-    target = _target_url(path or frappe.request.args.get("path") or "/")
+def _response_headers(upstream: requests.Response) -> dict[str, str]:
+    return {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower() not in _DROP_HEADERS and key.lower() not in {"content-encoding"}
+    }
+
+
+def _stream(upstream: requests.Response) -> Iterator[bytes]:
+    try:
+        for chunk in upstream.iter_content(chunk_size=64 * 1024):
+            if chunk:
+                yield chunk
+    finally:
+        upstream.close()
+
+
+def _make_upstream_response(target: str) -> Response:
     try:
         upstream = requests.request(
-            method=method,
+            method=frappe.request.method.upper(),
             url=target,
             headers=_request_headers(),
             data=frappe.request.get_data(cache=True),
             timeout=(10, 120),
             allow_redirects=False,
+            stream=True,
         )
     except requests.RequestException:
         frappe.log_error(frappe.get_traceback(), "Back4App XHTTP Relay upstream failure")
-        frappe.local.response["http_status_code"] = 502
-        return "Bad Gateway: Proxy Request Failed"
+        return Response("Bad Gateway: Proxy request failed", status=502, content_type="text/plain")
 
-    _set_raw_response(upstream)
+    return Response(
+        _stream(upstream),
+        status=upstream.status_code,
+        headers=_response_headers(upstream),
+        direct_passthrough=True,
+    )
+
+
+def _is_exempt(path: str) -> bool:
+    return any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in _EXEMPT_PREFIXES)
+
+
+
+def relay_before_request():
+    """Forward the public site root and paths directly to the fixed upstream."""
+    path = frappe.request.path or "/"
+    if _is_exempt(path):
+        return
+    if not _token_is_valid():
+        raise RelayHTTPException(Response("Forbidden: invalid relay token", status=403))
+
+    try:
+        response = _make_upstream_response(f"{path}?{frappe.request.query_string.decode()}" if frappe.request.query_string else path)
+    except (frappe.ValidationError, ValueError) as error:
+        response = Response(f"Misconfigured relay target: {error}", status=500, content_type="text/plain")
+    raise RelayHTTPException(response)
+
+
+@frappe.whitelist(allow_guest=True)
+def health():
+    """Health endpoint for monitoring without contacting the upstream."""
+    return {"status": "ok", "upstream": _setting("back4app_relay_target_domain") or "https://vps.thumbayan.com:443"}
+
+
+@frappe.whitelist(allow_guest=True)
+def relay(path: str | None = None):
+    """Explicit API relay retained for clients that prefer an API method."""
+    if not _token_is_valid():
+        raise Forbidden("Invalid relay token")
+    method = frappe.request.method.upper()
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
+        raise BadRequest("HTTP method is not supported by the relay")
+    target = _target_url(path or frappe.request.args.get("path") or "/")
+    response = _make_upstream_response(target)
+    frappe.local.response["type"] = "binary"
+    frappe.local.response["filecontent"] = response.get_data()
+    frappe.local.response["content_type"] = response.content_type or "application/octet-stream"
+    frappe.local.response["http_status_code"] = response.status_code
+    frappe.local.response["headers"] = dict(response.headers)
     return None

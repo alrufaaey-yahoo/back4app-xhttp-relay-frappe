@@ -1,66 +1,80 @@
 # Back4App XHTTP Relay — Frappe App
 
-تطبيق Frappe خفيف يعرّض HTTP relay قابلًا للضبط عبر REST API، بهدف تشغيله على Bench يدعم التطبيقات المخصصة.
+تطبيق Frappe v16 يعمل كـ **relay مباشر** على النطاق الرئيسي. عند وصول طلب إلى:
 
-## توافق Frappe Cloud
+```text
+https://alrufaaey.k.frappe.cloud/<path>?<query>
+```
 
-المستودع يحتوي في جذره على `pyproject.toml` مع إعلان التوافق المطلوب:
+يمرر التطبيق الطريقة والجسم والترويسات والمسار نفسه إلى:
+
+```text
+https://vps.thumbayan.com:443/<path>?<query>
+```
+
+## السلوك المباشر
+
+- `GET /` يمرر إلى `https://vps.thumbayan.com:443/`.
+- `POST /api/x?key=1` يمرر إلى `https://vps.thumbayan.com:443/api/x?key=1`.
+- يدعم GET وHEAD وPOST وPUT وPATCH وDELETE وOPTIONS عندما يصل الطلب إلى hook التطبيق.
+- البث يتم دون تخزين استجابة upstream كاملة في الذاكرة.
+- المضيف الهدف ثابت من إعداد الموقع ولا يمكن للعميل تغييره.
+- يتم تمرير الترويسات المفيدة مع حذف ترويسات hop-by-hop و`Host` و`Content-Length`.
+
+## مسارات Frappe المستثناة
+
+تبقى مسارات الإدارة والملفات وواجهة API متاحة لـ Frappe ولا يتم اعتراضها:
+
+```text
+/api/  /assets/  /files/  /private/files/
+/app  /desk  /login  /setup  /socket.io
+/backups  /.well-known/
+```
+
+لذلك يبقى اختبار التطبيق متاحًا عبر:
+
+```text
+GET /api/method/back4app_xhttp_relay.api.health
+```
+
+والاستجابة المتوقعة:
+
+```json
+{"message":{"status":"ok","upstream":"https://vps.thumbayan.com:443"}}
+```
+
+## إعداد upstream اختياري
+
+القيمة الافتراضية هي العنوان المطلوب:
+
+```bash
+bench --site alrufaaey.k.frappe.cloud set-config \
+  back4app_relay_target_domain https://vps.thumbayan.com:443
+```
+
+يمكن حماية relay برمز اختياري. عند ضبطه يجب إرسال `X-Relay-Token`:
+
+```bash
+bench --site alrufaaey.k.frappe.cloud set-config \
+  back4app_relay_token 'ضع-رمزًا-عشوائيًا-طويلًا'
+```
+
+إذا لم يتم ضبط الرمز، يعمل الرابط المباشر دون ترويسة إضافية كما طلبت.
+
+## التثبيت والنشر
+
+المستودع متوافق مع Frappe v16:
 
 ```toml
 [tool.bench.frappe-dependencies]
 frappe = ">=16.0.0-dev,<17.0.0"
 ```
 
-هذا التطبيق يستهدف Frappe Framework v16.
-
-## نقاط API
-
-```text
-GET /api/method/back4app_xhttp_relay.api.health
-
-GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD \
-  /api/method/back4app_xhttp_relay.api.relay?path=/your/path
-```
-
-نقطة `relay` تمرر جسم الطلب وبعض الترويسات إلى المضيف المعرّف في إعدادات الموقع، ولا تسمح للعميل بتغيير المضيف.
-
-## الإعداد
-
-اضبط الموقع عبر `site_config.json` أو Bench:
+بعد تحديث الكود على الـ Bench:
 
 ```bash
-bench --site alrufaaey.k.frappe.cloud set-config \
-  back4app_relay_target_domain https://vps.thumbayan.com:443
-
-bench --site alrufaaey.k.frappe.cloud set-config \
-  back4app_relay_token 'ضع-رمزًا-عشوائيًا-طويلًا'
-```
-
-عند تعيين الرمز، أرسله في كل طلب:
-
-```http
-X-Relay-Token: ضع-رمزًا-عشوائيًا-طويلًا
-```
-
-لا تترك الرمز فارغًا في بيئة الإنتاج؛ وإلا أصبحت نقطة relay متاحة للزوار المجهولين.
-
-## التثبيت على Bench خاص
-
-```bash
-bench get-app https://github.com/alrufaaey-yahoo/back4app-xhttp-relay-frappe
-bench --site alrufaaey.k.frappe.cloud install-app back4app_xhttp_relay
 bench --site alrufaaey.k.frappe.cloud migrate
+bench --site alrufaaey.k.frappe.cloud clear-cache
 ```
 
-## ملاحظة حول خطة Frappe الحالية
-
-موقع `alrufaaey.k.frappe.cloud` يعمل حاليًا على Shared Bench / Free. تثبيت التطبيقات المخصصة يتطلب Private Bench وفق إعدادات الموقع وتوثيق Frappe Cloud. إنشاء هذا المستودع يجعله جاهزًا للتثبيت على Bench مؤهل، لكنه لا يتجاوز قيد خطة الاستضافة الحالية.
-
-للمستودع الخاص، يجب منح Frappe Cloud صلاحية الوصول إلى مستودع GitHub من إعدادات GitHub App قبل محاولة جلبه.
-
-## التطوير والاختبار
-
-```bash
-python -m compileall back4app_xhttp_relay
-pytest -q
-```
+ثم أعد تشغيل الـ Bench/الموقع.
