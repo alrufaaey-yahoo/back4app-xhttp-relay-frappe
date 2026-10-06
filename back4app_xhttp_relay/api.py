@@ -7,7 +7,6 @@ upstream while Frappe administration, assets, and API routes remain available.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from urllib.parse import urlsplit, urlunsplit
 
 import frappe
@@ -93,23 +92,6 @@ def _token_is_valid() -> bool:
     return frappe.request.headers.get("X-Relay-Token") == configured_token
 
 
-def _response_headers(upstream: requests.Response) -> dict[str, str]:
-    return {
-        key: value
-        for key, value in upstream.headers.items()
-        if key.lower() not in _DROP_HEADERS and key.lower() not in {"content-encoding"}
-    }
-
-
-def _stream(upstream: requests.Response) -> Iterator[bytes]:
-    try:
-        for chunk in upstream.iter_content(chunk_size=64 * 1024):
-            if chunk:
-                yield chunk
-    finally:
-        upstream.close()
-
-
 def _make_upstream_response(target: str) -> Response:
     try:
         upstream = requests.request(
@@ -119,17 +101,12 @@ def _make_upstream_response(target: str) -> Response:
             data=frappe.request.get_data(cache=True),
             timeout=(10, 120),
             allow_redirects=False,
-            stream=True,
         )
     except requests.RequestException:
         frappe.log_error(frappe.get_traceback(), "Back4App XHTTP Relay upstream failure")
         return Response("Bad Gateway: Proxy request failed", status=502, content_type="text/plain")
 
-    return Response(
-        _stream(upstream),
-        status=upstream.status_code,
-        headers=_response_headers(upstream),
-    )
+    return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type"))
 
 
 def _is_exempt(path: str) -> bool:
@@ -180,5 +157,4 @@ def relay(path: str | None = None):
     frappe.local.response["filecontent"] = response.get_data()
     frappe.local.response["content_type"] = response.content_type or "application/octet-stream"
     frappe.local.response["http_status_code"] = response.status_code
-    frappe.local.response["headers"] = dict(response.headers)
     return None
