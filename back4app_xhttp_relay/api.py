@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import frappe
 import requests
-from werkzeug.exceptions import BadRequest, Forbidden, HTTPException
+from werkzeug.exceptions import BadRequest, Forbidden
 from werkzeug.wrappers import Response
 
 
@@ -47,13 +47,6 @@ _EXEMPT_PREFIXES = (
     "/backups",
     "/.well-known/",
 )
-
-
-class RelayHTTPException(HTTPException):
-    """Stop Frappe's normal router and return the upstream response directly."""
-
-    def __init__(self, response: Response):
-        super().__init__(description="Relay response", response=response)
 
 
 def _setting(name: str, default=None):
@@ -146,18 +139,26 @@ def _is_exempt(path: str) -> bool:
 
 
 def relay_before_request():
-    """Forward the public site root and paths directly to the fixed upstream."""
+    """Route public requests through Frappe's raw binary API response path.
+
+    Frappe executes ``before_request`` hooks before its normal router. Rewriting
+    the internal path/form command here keeps the public URL unchanged while
+    letting Frappe build the response safely (including status and headers).
+    """
     path = frappe.request.path or "/"
     if _is_exempt(path):
         return
     if not _token_is_valid():
-        raise RelayHTTPException(Response("Forbidden: invalid relay token", status=403))
+        frappe.local.request.environ["PATH_INFO"] = "/api/method/back4app_xhttp_relay.api.relay"
+        frappe.local.form_dict.cmd = "back4app_xhttp_relay.api.relay"
+        frappe.local.form_dict.path = path
+        return
 
-    try:
-        response = _make_upstream_response(f"{path}?{frappe.request.query_string.decode()}" if frappe.request.query_string else path)
-    except (frappe.ValidationError, ValueError) as error:
-        response = Response(f"Misconfigured relay target: {error}", status=500, content_type="text/plain")
-    raise RelayHTTPException(response)
+    query = frappe.request.query_string.decode() if frappe.request.query_string else ""
+    original_path = f"{path}?{query}" if query else path
+    frappe.local.request.environ["PATH_INFO"] = "/api/method/back4app_xhttp_relay.api.relay"
+    frappe.local.form_dict.cmd = "back4app_xhttp_relay.api.relay"
+    frappe.local.form_dict.path = original_path
 
 
 @frappe.whitelist(allow_guest=True)
