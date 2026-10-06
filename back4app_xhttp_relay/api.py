@@ -129,7 +129,6 @@ def _make_upstream_response(target: str) -> Response:
         _stream(upstream),
         status=upstream.status_code,
         headers=_response_headers(upstream),
-        direct_passthrough=True,
     )
 
 
