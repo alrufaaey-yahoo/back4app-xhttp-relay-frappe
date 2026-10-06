@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "back4app-xhttp-relay"
+name = "back4app_xhttp_relay"
 version = "0.1.0"
 description = "Frappe app exposing a configurable XHTTP relay"
 readme = "README.md"
