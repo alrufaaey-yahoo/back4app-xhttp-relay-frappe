@@ -1,0 +1,3 @@
+include README.md
+include requirements.txt
+recursive-include back4app_xhttp_relay *.py *.json *.js *.css *.html

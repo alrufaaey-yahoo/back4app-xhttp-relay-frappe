@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "back4app-xhttp-relay"
+version = "0.1.0"
+description = "Frappe app exposing a configurable XHTTP relay"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+
+[tool.setuptools.packages.find]
+include = ["back4app_xhttp_relay*"]
+
+[tool.bench.frappe-dependencies]
+frappe = ">=16.0.0-dev,<17.0.0"
