@@ -13,6 +13,6 @@ def test_target_path_is_appended_to_configured_host():
 def test_frappe_app_files_exist():
     from pathlib import Path
 
-    root = Path(__file__).parents[1]
+    root = Path(__file__).parents[2]
     assert (root / "back4app_xhttp_relay" / "hooks.py").is_file()
     assert (root / "back4app_xhttp_relay" / "api.py").is_file()
