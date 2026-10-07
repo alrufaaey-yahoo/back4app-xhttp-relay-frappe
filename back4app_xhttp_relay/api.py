@@ -82,6 +82,17 @@ def _request_headers() -> dict[str, str]:
 
 def _set_raw_response(response: requests.Response) -> None:
     """Ask Frappe to return the upstream body instead of wrapping it in JSON."""
+    # Frappe's ``as_binary`` response builder does not consume
+    # ``http_status_code`` (unlike ``as_json``), so a proxied 4xx/5xx would
+    # incorrectly leave the API response at 200.  Use the JSON response
+    # builder for non-success statuses; it honors the status code and the
+    # upstream response body is empty for the XHTTP error response we proxy.
+    if response.status_code >= 400:
+        frappe.local.response["type"] = "json"
+        frappe.local.response["http_status_code"] = response.status_code
+        frappe.local.response["message"] = response.text
+        return
+
     frappe.local.response["type"] = "binary"
     frappe.local.response["filecontent"] = response.content
     frappe.local.response["content_type"] = response.headers.get("Content-Type", "application/octet-stream")
