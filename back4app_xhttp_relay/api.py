@@ -156,4 +156,14 @@ def relay(path: str | None = None):
     if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
         raise BadRequest("HTTP method is not supported by the relay")
     target = _target_url(path or frappe.request.args.get("path") or "/")
-    return _make_upstream_response(target)
+    response = _make_upstream_response(target)
+    frappe.local.back4app_relay_status = response.status_code
+    return response
+
+
+def relay_after_request(response):
+    """Restore the upstream status after Frappe builds its API response."""
+    status_code = getattr(frappe.local, "back4app_relay_status", None)
+    if status_code is not None:
+        response.status_code = status_code
+    return response

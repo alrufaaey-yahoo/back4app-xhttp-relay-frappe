@@ -12,3 +12,4 @@ required_apps = ["frappe"]
 # Public requests are relayed directly; Frappe admin, assets, and /api routes
 # are excluded inside relay_before_request().
 before_request = ["back4app_xhttp_relay.api.relay_before_request"]
+after_request = ["back4app_xhttp_relay.api.relay_after_request"]
