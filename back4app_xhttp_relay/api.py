@@ -106,7 +106,11 @@ def _make_upstream_response(target: str) -> Response:
         frappe.log_error(frappe.get_traceback(), "Back4App XHTTP Relay upstream failure")
         return Response("Bad Gateway: Proxy request failed", status=502, content_type="text/plain")
 
-    return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type"))
+    return Response(
+        upstream.content,
+        status=upstream.status_code,
+        content_type=upstream.headers.get("Content-Type") or "application/octet-stream",
+    )
 
 
 def _is_exempt(path: str) -> bool:
