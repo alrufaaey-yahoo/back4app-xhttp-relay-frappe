@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import frappe
 import requests
-from werkzeug.exceptions import BadRequest, Forbidden
+from werkzeug.exceptions import BadRequest, Forbidden, HTTPException
 from werkzeug.wrappers import Response
 
 _DROP_HEADERS = {
@@ -44,6 +44,17 @@ _EXEMPT_PREFIXES = (
     "/backups",
     "/.well-known/",
 )
+
+
+class _RelayHTTPResponse(HTTPException):
+    """Escape hatch for Frappe's before_request hook, which ignores returns."""
+
+    def __init__(self, body: bytes, status: int, headers: dict[str, str]):
+        self._relay_response = Response(body, status=status, headers=headers)
+        super().__init__()
+
+    def get_response(self, environ=None):
+        return self._relay_response
 
 
 def _setting(name: str, default=None):
@@ -127,7 +138,9 @@ def relay_before_request():
     query = frappe.request.query_string.decode() if frappe.request.query_string else ""
     original_path = f"{path}?{query}" if query else path
     status, body, headers = _fetch_upstream(_target_url(original_path))
-    return Response(body, status=status, headers=headers)
+    # Frappe ignores return values from before_request hooks. Raising an
+    # HTTPException makes frappe.app.application use get_response() directly.
+    raise _RelayHTTPResponse(body, status, headers)
 
 
 @frappe.whitelist(allow_guest=True)
