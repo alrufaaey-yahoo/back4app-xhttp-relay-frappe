@@ -156,10 +156,4 @@ def relay(path: str | None = None):
     if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
         raise BadRequest("HTTP method is not supported by the relay")
     target = _target_url(path or frappe.request.args.get("path") or "/")
-    response = _make_upstream_response(target)
-    frappe.local.response["type"] = "binary"
-    frappe.local.response["filecontent"] = response.get_data()
-    frappe.local.response["filename"] = "relay-response"
-    frappe.local.response["content_type"] = response.content_type or "application/octet-stream"
-    frappe.local.response["http_status_code"] = response.status_code
-    return None
+    return _make_upstream_response(target)
