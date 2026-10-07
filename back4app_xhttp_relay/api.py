@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 import frappe
 import requests
 from werkzeug.exceptions import BadRequest, Forbidden
+from werkzeug.wrappers import Response
 
 _DROP_HEADERS = {
     "host",
@@ -112,20 +113,21 @@ def _is_exempt(path: str) -> bool:
 
 
 def relay_before_request():
-    """Rewrite public requests to the relay method while preserving the URL."""
+    """Return the upstream WSGI response directly for public requests.
+
+    Returning a Werkzeug Response from a Frappe before_request hook bypasses
+    Frappe's JSON/binary response builder, which otherwise replaces an empty
+    upstream body with ``{}`` and drops end-to-end headers.
+    """
     path = frappe.request.path or "/"
     if _is_exempt(path):
-        return
+        return None
     if not _token_is_valid():
-        frappe.local.request.environ["PATH_INFO"] = "/api/method/back4app_xhttp_relay.api.relay"
-        frappe.local.form_dict.cmd = "back4app_xhttp_relay.api.relay"
-        frappe.local.form_dict.path = path
-        return
+        return Response("Forbidden", status=403, content_type="text/plain")
     query = frappe.request.query_string.decode() if frappe.request.query_string else ""
     original_path = f"{path}?{query}" if query else path
-    frappe.local.request.environ["PATH_INFO"] = "/api/method/back4app_xhttp_relay.api.relay"
-    frappe.local.form_dict.cmd = "back4app_xhttp_relay.api.relay"
-    frappe.local.form_dict.path = original_path
+    status, body, headers = _fetch_upstream(_target_url(original_path))
+    return Response(body, status=status, headers=headers)
 
 
 @frappe.whitelist(allow_guest=True)
