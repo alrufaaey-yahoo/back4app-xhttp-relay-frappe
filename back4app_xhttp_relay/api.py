@@ -159,6 +159,7 @@ def relay(path: str | None = None):
     response = _make_upstream_response(target)
     frappe.local.response["type"] = "binary"
     frappe.local.response["filecontent"] = response.get_data()
+    frappe.local.response["filename"] = "relay-response"
     frappe.local.response["content_type"] = response.content_type or "application/octet-stream"
     frappe.local.response["http_status_code"] = response.status_code
     return None
