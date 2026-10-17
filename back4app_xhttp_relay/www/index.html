@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>مرآة الويب | Web Mirror</title>
+  <style>
+    :root{color-scheme:light;--bg:#f6f8fc;--panel:#fff;--text:#172033;--muted:#63708a;--accent:#315bea;--line:#dfe5ef;--danger:#b42318}
+    [data-theme="dark"]{color-scheme:dark;--bg:#0f172a;--panel:#172033;--text:#eef3ff;--muted:#aeb9ce;--accent:#8ea7ff;--line:#2e3a52;--danger:#ff9b91}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,var(--bg),var(--panel));color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+    .wrap{max-width:1180px;margin:auto;padding:28px 18px}.top{display:flex;justify-content:space-between;align-items:center;gap:14px}.brand{display:flex;align-items:center;gap:12px}.logo{width:44px;height:44px;border-radius:14px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:20px}.brand h1{font-size:20px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:13px}.actions{display:flex;gap:8px}.btn,.input{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text);padding:11px 14px;font:inherit}.btn{cursor:pointer}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}.hero{margin:58px 0 22px;text-align:center}.hero h2{font-size:clamp(30px,6vw,56px);line-height:1.08;margin:0 auto 14px;max-width:780px;letter-spacing:-1px}.hero p{color:var(--muted);max-width:650px;margin:0 auto 28px}.bar{display:flex;gap:10px;max-width:860px;margin:auto;padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 40px #1b2a4b12}.bar .input{flex:1;min-width:0;border:0;outline:0;direction:ltr;text-align:left}.bar .btn{min-width:108px}.status{min-height:24px;margin:12px auto;color:var(--muted);font-size:14px}.status.error{color:var(--danger)}.viewer{display:none;margin-top:28px;border:1px solid var(--line);background:var(--panel);border-radius:18px;overflow:hidden}.viewer.show{display:block}.viewer-head{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid var(--line)}.viewer-head .input{flex:1;padding:8px;font-size:13px}.viewer iframe{display:block;width:100%;height:68vh;border:0;background:#fff}.note{font-size:12px;color:var(--muted);text-align:center;margin-top:18px}.spinner{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-left-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-inline-end:6px}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:640px){.wrap{padding:18px 12px}.hero{margin-top:40px}.bar{display:block;padding:10px}.bar .input,.bar .btn{width:100%;margin-bottom:8px}.bar .btn{margin-bottom:0}.top{align-items:flex-start}.brand h1{font-size:17px}.viewer iframe{height:70vh}}
+  </style>
+</head>
+<body data-theme="light">
+  <main class="wrap">
+    <header class="top">
+      <div class="brand"><div class="logo">↗</div><div><h1 data-ar="مرآة الويب" data-en="Web Mirror">مرآة الويب</h1><p data-ar="تصفح عبر الخادم بأمان" data-en="Browse through the server">تصفح عبر الخادم بأمان</p></div></div>
+      <div class="actions"><button class="btn" id="lang">EN</button><button class="btn" id="theme" aria-label="تبديل المظهر">◐</button></div>
+    </header>
+    <section class="hero">
+      <h2 data-ar="افتح المواقع من خلال Proxy آمن" data-en="Browse the web through a secure proxy">افتح المواقع من خلال Proxy آمن</h2>
+      <p data-ar="يتم جلب المحتوى من الخادم وإعادة توجيه الروابط والموارد المدعومة عبر هذا الموقع. لا تُرسل ملفات تعريف الارتباط أو بيانات الاعتماد إلى المواقع الخارجية." data-en="Content is fetched server-side and supported links and resources are routed through this site. Cookies and credentials are not forwarded to external sites.">يتم جلب المحتوى من الخادم وإعادة توجيه الروابط والموارد المدعومة عبر هذا الموقع. لا تُرسل ملفات تعريف الارتباط أو بيانات الاعتماد إلى المواقع الخارجية.</p>
+      <form class="bar" id="form"><input class="input" id="url" type="url" dir="ltr" autocomplete="url" placeholder="Enter a website URL, for example https://example.com" data-placeholder-ar="أدخل رابط الموقع، مثل https://example.com" data-placeholder-en="Enter a website URL, for example https://example.com" required><button class="btn primary" type="submit" data-ar="تصفح" data-en="Browse">تصفح</button></form>
+      <div class="status" id="status" role="status"></div>
+    </section>
+    <section class="viewer" id="viewer" aria-live="polite">
+      <div class="viewer-head"><input class="input" id="current" dir="ltr" readonly><button class="btn" id="reload" data-ar="إعادة تحميل" data-en="Reload">إعادة تحميل</button><button class="btn" id="home" data-ar="الرئيسية" data-en="Home">الرئيسية</button></div>
+      <iframe id="frame" sandbox="allow-forms allow-modals" referrerpolicy="no-referrer"></iframe>
+    </section>
+    <p class="note" data-ar="قد لا تعمل تطبيقات JavaScript المعقدة أو WebSockets داخل Proxy الأساسي." data-en="Complex JavaScript applications and WebSockets may not work in the basic proxy.">قد لا تعمل تطبيقات JavaScript المعقدة أو WebSockets داخل Proxy الأساسي.</p>
+  </main>
+  <script>
+    const $=s=>document.querySelector(s), form=$("#form"), input=$("#url"), frame=$("#frame"), viewer=$("#viewer"), status=$("#status"), current=$("#current");
+    let lang=localStorage.getItem("proxy-lang")||"ar", theme=localStorage.getItem("proxy-theme")||"light", last="";
+    function setLang(){document.documentElement.lang=lang;document.documentElement.dir=lang==="ar"?"rtl":"ltr";document.querySelectorAll("[data-ar]").forEach(e=>e.textContent=e.dataset[lang]);input.placeholder=input.dataset["placeholder-"+lang];$("#lang").textContent=lang==="ar"?"EN":"عربي"}
+    function setTheme(){document.body.dataset.theme=theme;$("#theme").textContent=theme==="dark"?"☀":"◐"}
+    function clean(v){v=v.trim();if(!v)return "";return /^[a-z][a-z0-9+.-]*:\/\//i.test(v)?v:"https://"+v}
+    function go(v){v=clean(v);try{const u=new URL(v);if(!["http:","https:"].includes(u.protocol))throw Error();last=u.href;current.value=last;viewer.classList.add("show");status.className="status";status.innerHTML='<span class="spinner"></span>'+(lang==="ar"?"جارٍ الاتصال بالخادم…":"Connecting through the server…");frame.src="/api/method/back4app_xhttp_relay.api.proxy?url="+encodeURIComponent(last);frame.onload=()=>{status.textContent=lang==="ar"?"تم تحميل المحتوى عبر الخادم":"Content loaded through the server"};frame.onerror=()=>{status.className="status error";status.textContent=lang==="ar"?"تعذر تحميل الموقع":"The website could not be loaded"}}catch(e){status.className="status error";status.textContent=lang==="ar"?"أدخل رابط HTTP أو HTTPS صحيحًا":"Enter a valid HTTP or HTTPS URL"}}
+    form.addEventListener("submit",e=>{e.preventDefault();go(input.value)});$("#reload").onclick=()=>last&&go(last);$("#home").onclick=()=>{viewer.classList.remove("show");input.focus()};$("#lang").onclick=()=>{lang=lang==="ar"?"en":"ar";localStorage.setItem("proxy-lang",lang);setLang()};$("#theme").onclick=()=>{theme=theme==="dark"?"light":"dark";localStorage.setItem("proxy-theme",theme);setTheme()};setLang();setTheme();
+  </script>
+</body>
+</html>
